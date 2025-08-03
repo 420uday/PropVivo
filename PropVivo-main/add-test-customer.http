@@ -1,0 +1,32 @@
+### Step 1: Generate Authentication Token
+GET https://localhost:7266/api/authentication/generate-token
+
+### Step 2: Create a Test Customer (Replace YOUR_TOKEN with the token from Step 1)
+POST https://localhost:7266/api/v1/Customers
+Authorization: Bearer YOUR_TOKEN
+Content-Type: application/json
+
+{
+  "name": "John Smith",
+  "phoneNumber": "+15551234567",
+  "email": "john.smith@example.com",
+  "address": "123 Main Street, Anytown, USA",
+  "notes": "Test customer for voice integration demo"
+}
+
+### Step 3: Create Another Test Customer
+POST https://localhost:7266/api/v1/Customers
+Authorization: Bearer YOUR_TOKEN
+Content-Type: application/json
+
+{
+  "name": "Jane Doe",
+  "phoneNumber": "+15559876543",
+  "email": "jane.doe@example.com",
+  "address": "456 Oak Avenue, Somewhere, USA",
+  "notes": "Second test customer for demo"
+}
+
+### Step 4: Verify Customer Creation (Optional)
+GET https://localhost:7266/api/v1/Customers/by-phone/+15551234567
+Authorization: Bearer YOUR_TOKEN 
