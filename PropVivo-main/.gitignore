@@ -1,0 +1,55 @@
+# --- General ---
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# --- .NET / Visual Studio ---
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+.vs/
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+build/
+[Bb]in/
+[Oo]bj/
+*.nupkg
+*.nuget.props
+*.nuget.targets
+packages/
+*.nuget.pkginfo
+*.sln.DotSettings.user
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+*.[Pp]ublish.xml
+*.buildlog
+
+# --- Frontend (React / Node.js) ---
+/frontend/node_modules
+/frontend/build
+/frontend/npm-debug.log*
+/frontend/yarn-debug.log*
+/frontend/yarn-error.log*
+/frontend/.env.local
+/frontend/.env.development.local
+/frontend/.env.test.local
+/frontend/.env.production.local
+
+# --- Project-Specific ---
+appsettings.Development.json
+PropVivo.API/appsettings.Development.json
+PropVivo.API/PropVivo.API.http
+
+# --- Python / Virtual Environments ---
+/VoiceService/
+venv/
+*.pyc
+__pycache__/
