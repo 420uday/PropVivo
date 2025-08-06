@@ -1,184 +1,143 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Device } from '@twilio/voice-sdk';
-import { startSignalRConnection, onIncomingCall } from './signalRService';
-import apiClient, { setAuthToken } from './apiClient';
-import './App.css';
+import TwilioService from './services/twilioService';
+import CallNotification from './components/CallNotification';
+import CustomerInfo from './components/CustomerInfo';
+import CallControls from './components/CallControls';
+import './styles.css';
 
 function App() {
-  const [uiState, setUiState] = useState('initializing');
+  const [incomingCall, setIncomingCall] = useState(null);
   const [customer, setCustomer] = useState(null);
+  const [callActive, setCallActive] = useState(false);
   const [textToSay, setTextToSay] = useState('');
-  
-  const deviceRef = useRef(null);
-  const activeConnectionRef = useRef(null);
-
-  const handleStartSystem = async (event) => {
-    event.currentTarget.disabled = true;
-
-    try {
-      await navigator.mediaDevices.getUserMedia({ audio: true });
-      
-      const authResponse = await apiClient.get('/Authentication/generate-token');
-      setAuthToken(authResponse.data.token);
-
-      const twilioTokenResponse = await apiClient.get('/v1/voice/token');
-      const twilioToken = twilioTokenResponse.data.token;
-
-      const device = new Device(twilioToken, {
-        edge: ['ashburn', 'singapore'],
-      });
-      deviceRef.current = device;
-
-      device.on('error', (error) => {
-        console.error('Twilio Device Error:', error.message);
-        setUiState('error');
-      });
-
-      device.on('incoming', (connection) => {
-        console.log('Twilio: Incoming connection object received.');
-        activeConnectionRef.current = connection;
-      });
-      
-      device.on('disconnect', () => {
-        console.log("Call disconnected via Twilio event.");
-        handleHangUp();
-      });
-
-      await device.register();
-      setUiState('ready');
-
-    } catch (error) {
-      console.error("Initialization failed:", error);
-      setUiState('error');
-    }
-  };
+  const [isInitialized, setIsInitialized] = useState(false);
 
   useEffect(() => {
-    startSignalRConnection();
-    onIncomingCall((customerData) => {
-      console.log("SignalR: Received incoming call data for:", customerData.name);
-      setCustomer(customerData);
-      setUiState('ringing');
-    });
+    // Initialize Twilio service when component mounts
+    const initializeTwilio = async () => {
+      try {
+        // Fetch Twilio token from backend (in a real app, this would be secured)
+        const response = await fetch('/api/twilio/token');
+        const data = await response.json();
+        
+        TwilioService.initialize(data.token);
+        setIsInitialized(true);
+        
+        // Listen for incoming calls
+        TwilioService.device.on('incoming', call => {
+          setIncomingCall(call);
+          
+          // Look up customer by phone number
+          const phoneNumber = call.parameters.From;
+          fetchCustomer(phoneNumber);
+        });
+
+      } catch (error) {
+        console.error('Initialization failed:', error);
+      }
+    };
+
+    initializeTwilio();
 
     return () => {
-      if (deviceRef.current) {
-        deviceRef.current.destroy();
+      // Clean up Twilio device when component unmounts
+      if (TwilioService.device) {
+        TwilioService.device.destroy();
       }
     };
   }, []);
 
-  const handleAnswer = () => {
-    if (activeConnectionRef.current) {
-      console.log("Answering call...");
-      activeConnectionRef.current.accept();
-      setUiState('active');
-    } else {
-      console.error("Cannot answer: No active Twilio connection object is stored.");
+  const fetchCustomer = async (phoneNumber) => {
+    try {
+      const response = await fetch(`/api/call/customer/${phoneNumber}`);
+      const customerData = await response.json();
+      setCustomer(customerData);
+    } catch (error) {
+      console.error('Error fetching customer:', error);
     }
   };
 
-  const handleHangUp = () => {
-    if (deviceRef.current) {
-      deviceRef.current.disconnectAll();
-    }
-    setUiState('ready');
+  const handleAnswer = () => {
+    TwilioService.answerCall();
+    setCallActive(true);
+    setIncomingCall(null);
+  };
+
+  const handleEnd = () => {
+    TwilioService.endCall();
+    setCallActive(false);
     setCustomer(null);
-    activeConnectionRef.current = null;
   };
 
   const handleSayText = async () => {
     if (!textToSay.trim()) return;
 
     try {
-      const response = await apiClient.post('/v1/modulation/say', JSON.stringify(textToSay), {
+      const response = await fetch('/api/call/say', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        responseType: 'blob',
+        body: JSON.stringify({ text: textToSay })
       });
       
-      const audio = new Audio(URL.createObjectURL(response.data));
-      audio.play();
-      setTextToSay('');
+      if (response.ok) {
+        const audioBlob = await response.blob();
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const audio = new Audio(audioUrl);
+        audio.play();
+        setTextToSay('');
+      } else {
+        console.error('Error converting text to speech');
+      }
     } catch (error) {
-      console.error('Error converting text to speech:', error);
-      alert('Failed to generate speech.');
+      console.error('Error:', error);
     }
   };
-  
-  const renderContent = () => {
-    switch (uiState) {
-      case 'ringing':
-        return (
-          <div className="call-notification">
-            <h2>Incoming Call...</h2>
-            {customer && <p>From: {customer.name} ({customer.phoneNumber})</p>}
-            <div className="call-controls">
-              <button className="btn answer-btn" onClick={handleAnswer}>Answer</button>
-              <button className="btn decline-btn" onClick={handleHangUp}>Decline</button>
-            </div>
-          </div>
-        );
-      case 'active':
-        return (
-          <div className="customer-details">
-            <h2>Customer Information</h2>
-            {customer && (
-              <>
-                <p><strong>Name:</strong> {customer.name}</p>
-                <p><strong>Phone:</strong> {customer.phoneNumber}</p>
-                <p><strong>Email:</strong> {customer.email}</p>
-                <p><strong>Address:</strong> {customer.address}</p>
-                <p><strong>Notes:</strong> {customer.notes}</p>
-              </>
-            )}
 
-            <div className="modulation-controls" style={{ marginTop: '20px', borderTop: '1px solid #444', paddingTop: '20px', textAlign: 'center' }}>
-              <h4>Voice Modulation (Say in American Accent)</h4>
-              <input 
-                type="text" 
-                value={textToSay} 
-                onChange={(e) => setTextToSay(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSayText()}
-                placeholder="Type message to say..."
-                style={{ width: 'calc(70% - 10px)', padding: '10px', marginRight: '10px', borderRadius: '5px', border: '1px solid #555', background: '#333', color: '#fff' }}
-              />
-              <button className="btn answer-btn" onClick={handleSayText}>Say</button>
-            </div>
-
-            <div className="call-controls">
-                <button className="btn hangup-btn" onClick={handleHangUp}>Hang Up</button>
-            </div>
-          </div>
-        );
-      case 'ready':
-        return (
-          <div className="waiting-message">
-            <p>Waiting for incoming calls...</p>
-          </div>
-        );
-      case 'error':
-        return <div className="waiting-message"><p>Error: Could not initialize. Please refresh and allow microphone access.</p></div>;
-      case 'initializing':
-      default:
-        return (
-          <div className="init-button-container">
-            <p>Click the button to initialize the call system and connect.</p>
-            <button className="btn answer-btn" onClick={handleStartSystem}>
-              Start Call System
-            </button>
-          </div>
-        );
-    }
-  };
+  if (!isInitialized) {
+    return (
+      <div className="app-container">
+        <div className="init-message">
+          <p>Initializing call system...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="App">
-      <header className="App-header">
-        <h1>Support Dashboard</h1>
-      </header>
-      <main className="dashboard">
-        {renderContent()}
-      </main>
+    <div className="app-container">
+      {incomingCall && (
+        <CallNotification 
+          caller={customer?.name || incomingCall.parameters.From}
+          onAnswer={handleAnswer}
+          onReject={handleEnd}
+        />
+      )}
+      
+      {callActive && customer && (
+        <div className="call-container">
+          <CustomerInfo customer={customer} />
+          
+          <div className="modulation-controls">
+            <h4>Voice Modulation (Say in American Accent)</h4>
+            <input 
+              type="text" 
+              value={textToSay} 
+              onChange={(e) => setTextToSay(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSayText()}
+              placeholder="Type message to say..."
+            />
+            <button onClick={handleSayText}>Say</button>
+          </div>
+          
+          <CallControls onEnd={handleEnd} />
+        </div>
+      )}
+
+      {!incomingCall && !callActive && (
+        <div className="waiting-message">
+          <p>Waiting for incoming calls...</p>
+        </div>
+      )}
     </div>
   );
 }
